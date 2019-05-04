@@ -1,0 +1,160 @@
+### START Create User
+#! /bin/bash
+D_RD='\e[38;5;88m'
+L_GRN='\e[38;5;41m'
+S_BLUE='\e[38;5;45m'
+L_GRY='\e[38;5;244m'
+WHTE='\e[38;5;231m'
+CLR='\e[0m'
+
+trap cleanup SIGINT
+cleanup() {
+  echo "[ STOPPED ] -- Recieved SIGINT - Cleaned up."
+  rm -f -- $0
+}
+
+echo "--------------------------------------"
+echo -e "${L_GRN}{~} ${WHTE}Device: ${S_BLUE}$HOSTNAME${CLR}"
+echo "--------------------------------------"
+echo
+
+# this is a fancy way of trapping errors and making them more pretty, we run this 
+# function later on when we add the users
+statreport(){
+if [[ $? -gt 0 ]]
+then
+    echo -e " ${D_RD}[ FAIL ]${CLR} -- ${CTNAME} did not complete succcesfully. Here is the error:"
+    echo
+    echo "==========="
+    echo ${CRNTASK}
+    echo "==========="
+    echo
+else
+    echo -e " ${L_GRN}[ ${WHTE}OK ${L_GRN}]${CLR} -- ${WHTE}${CTNAME} ${CLR}"
+fi
+}
+
+# So there is a lot going on right here. Essentially, we need way to determine 
+# if the arguments ht sends, are for multiple users and passwords or not, then if so,
+# make sure they are properly sorted and assigned so user 'a' gets password 'b'
+# The ifstatement checks the first variable $1, to see if it has our tag, then just
+# in case that happens to be an actual name, checks to see if there are more than two
+# variables passed. 
+
+if [[ "${1}" == "multiple-on" && "${#@}" -gt "3" ]]
+then
+    newarray=(${@//REPLACE-TAG/\$})
+    # remove the tags and place back in the $ symbols, but escaped
+
+    arrayargs=(${newarray[@]:1}) 
+    # rename array and remove the first item (multiple-on)
+
+    MIDDLE="(( ${#arrayargs[@]} / 2 ))"
+    # determine the middle of the array
+   
+    END="${#arrayargs[@]}"
+    # determine the end position
+   
+    NMUSR=${arrayargs[@]:0:${MIDDLE}} 
+    # select none from start and cut out end (users)
+    
+    NMPASS=${arrayargs[@]:${MIDDLE}:${END}}
+    # select from middle to end (passwords)
+    
+    # We had a check earlier already to make sure en even number of pass & users were
+    # sent. As such, the last half should be the passwords, and the first half should 
+    # be the users then we set the tags for the next part of the script
+
+    MULTIU="yes"
+    MULTIP="yes"
+else
+    MULTIU="no"
+    MULTIP="no"
+fi
+
+# Now we have an ifstatement to check for the flags on whether or not there are multiple
+# users and passwords
+
+if [[ "$MULTIU" =~ "yes" && "$MULTIP" =~ "yes" ]]
+then
+    # if there are multiple, it proceeds with below, we set the file separators to space 
+    # and save a copy of the space. I also renamed the array, though they probably would've
+    # been fine with their old names. I wrote the latter portion first, and didn't want to 
+    # rewrite all the names
+
+    OIFS=$IFS
+    IFS=" "
+    ARRAYUSR=($NMUSR)
+    ARRAYPASS=(${NMPASS})
+    echo
+    for k in ${ARRAYUSR[@]}
+    do   
+        # this is just a quick check to make sure the user doesn't exist
+        if $(id ${k} >/dev/null 2>&1)
+        then
+            echo -e "${D_RD}[ FAIL ]${CLR} -- ${WHTE}The user ${D_RD}${k}${CLR} already exists."
+            echo -e "            No changes have been made. Here is their entry:"
+            echo
+            echo "==========="
+            echo -e "$(id ${k})"
+            echo "==========="
+            exit 1
+        else
+            :
+        fi
+    done
+    # this esssentially reads as "for the total number of items in the array; do this for
+    # each item in the array. We redirect all error to std  out (2>&1), so that it returns 
+    # in our function we defined at the start
+    for ((i=0; i<${#ARRAYUSR[@]}; i++))
+    do
+        CTNAME="Create user ${S_BLUE}${ARRAYUSR[i]}"
+        CRNTASK=$(useradd ${ARRAYUSR[i]} -p ${ARRAYPASS[i]} 2>&1)
+        statreport
+        
+        # this checks the last variable we sent to the script, if it is 'EXPIREACCOUNT'
+        # then we set the acocunt to expire, otherwise we do nothing <-- I'm really glad I put this
+        # there, reading through it months later, I honestly forgot what that array did/how it worked
+        if [[ "${@: -1}" == "EXPIREACCOUNT" ]]
+        then
+            CTNAME="Set password to expire on first use"
+            CRNTASK=$(chage -d 0 ${ARRAYUSR[i]} 2>&1)
+            statreport
+        else
+            CTNAME="Did not set password to expire on first use"
+            statreport
+        fi
+    done
+    # set the IFS back to normal
+    IFS=$OIFS
+else
+    # this is just the same as above, but less complicated since we can take $1 & $2 
+    if $(id ${1} >/dev/null 2>&1)
+    then
+        echo -e "${D_RD}[ FAIL ]${CLR} -- ${WHTE}The user ${D_RD}${1}${CLR} already exists"
+        echo -e "            No changes have been made. Here is their entry:"
+        echo
+        echo "==========="
+        echo -e "$(id ${1})"
+        echo "==========="
+        exit 1
+    else
+        :
+    fi
+    CTNAME="Create user ${S_BLUE}${1}"
+    CRNTASK=$(useradd ${1} -p ${2//REPLACE-TAG/\$} 2>&1)
+    statreport
+
+    if [[ "${@: -1}" == "EXPIREACCOUNT" ]]
+    then
+        CTNAME="Set password to expire on first use"
+        CRNTASK=$(chage -d 0 ${1} 2>&1)
+        statreport
+    else
+        CTNAME="Did not set password to expire on first use"
+        statreport
+    fi
+fi
+
+rm -f -- $0
+### END Create User

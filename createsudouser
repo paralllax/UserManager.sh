@@ -1,0 +1,186 @@
+### START Create a user with Sudo Perms
+#! /bin/bash
+D_RD='\e[38;5;88m'
+L_GRN='\e[38;5;41m'
+S_BLUE='\e[38;5;45m'
+L_GRY='\e[38;5;244m'
+WHTE='\e[38;5;231m'
+CLR='\e[0m'
+
+trap cleanup SIGINT
+cleanup() {
+  echo "[ STOPPED ] -- Recieved SIGINT - Cleaned up."
+  rm -f -- $0
+}
+
+echo "--------------------------------------"
+echo -e "${L_GRN}{~} ${WHTE}Device: ${S_BLUE}$HOSTNAME${CLR}"
+echo "--------------------------------------"
+echo
+
+statreport(){
+if [[ $? -gt 0 ]]
+then
+    echo -e " ${D_RD}[ FAIL ]${CLR} -- ${CTNAME} did not complete succcesfully. Here is the error:"
+    echo
+    echo "==========="
+    echo ${CRNTASK}
+    echo "==========="
+    echo
+else
+echo -e " ${L_GRN}[ ${WHTE}OK ${L_GRN}]${CLR} -- ${WHTE}${CTNAME} ${CLR}"
+fi
+}
+
+if [[ "${1}" == "multiple-on" && "${#@}" -gt "4" ]]
+then
+    newarray=(${@//REPLACE-TAG/\$})
+    # remove the tags and place back in the $ symbols, but escaped
+
+    arrayargs=(${newarray[@]:1})
+    # rename array and remove the first item (multiple-on)
+
+    START="(( ${#arrayargs[@]} / 3 ))"
+    # determine the first section of the array
+
+    MIDDLE="$(echo ${#arrayargs[@]}*2/3 | bc) "
+    # determine the middle? sort of. Where the passwords end
+
+    END="${#arrayargs[@]}"
+    # determine the end position
+
+    NMUSR=${arrayargs[@]:0:${START}}
+    # select from start to passwords (users)
+
+    NMPASS=${arrayargs[@]:${START}:${START}}
+    # select from end of users and then cut out sudo (passwords)
+
+    NMSUDO=${arrayargs[@]:${MIDDLE}}
+    # essentially print everything after the password section
+
+    MULTIU="yes"
+    MULTIP="yes"
+else
+    MULTIU="no"
+    MULTIP="no"
+fi
+
+if [[ "$MULTIU" =~ "yes" && "$MULTIP" =~ "yes" ]]
+then
+    OIFS=$IFS
+    IFS=" "
+    ARRAYUSR=($NMUSR)
+    ARRAYPASS=(${NMPASS})
+    ARRAYSUDO=(${NMSUDO})
+    echo
+    for ((i=0; i<${#ARRAYUSR[@]}; i++))
+    do
+        sdofile=${ARRAYUSR[i]}
+        if [[ "$sdofile" =~ "." ]]
+        then
+            sdofile=$(echo $sdofile | sed 's/\./_/g')
+        else
+            :
+        fi
+        if [[ -f /etc/sudoers.d/${sdofile} ]]
+        then
+            echo -e " ${D_RD}[ FAIL ]${CLR} ${D_RD}${sdofile}${CLR} is a pre-existing sudoers file. Please try again."
+            exit 1
+        else
+            :
+        fi
+        if $(id ${ARRAYUSR[i]} >/dev/null 2>&1)
+        then
+            echo -e "${D_RD}[ FAIL ]${CLR} -- The user ${D_RD}${ARRAYUSR[i]}${CLR} already exists. "
+            echo "No changes have been made. Here is their entry:"
+            echo
+            echo "==========="
+            echo -e "$(id ${ARRAYUSR[i]})"
+            echo "==========="
+            exit 1
+        fi
+        CTNAME="Create user ${S_BLUE}${ARRAYUSR[i]}${WHTE} and set password"
+        CRNTASK=$(useradd ${ARRAYUSR[i]} -p ${ARRAYPASS[i]} 2>&1)
+        statreport
+
+        CTNAME="Grant user ${S_BLUE}${ARRAYUSR[i]}${WHTE} sudo permissions"
+        CRNTASK=$(echo "${ARRAYUSR[i]} ALL=(ALL) ${ARRAYSUDO[i]}" >> /etc/sudoers.d/${sdofile} 2>&1) &&
+        statreport
+    
+        CTNAME="Set correct permissions for sudoers.d file"
+        CRNTASK=$(chmod 0440 /etc/sudoers.d/${sdofile} 2>&1)
+        statreport
+
+        CTNAME="Check for file errors for sudoers"
+        CRNTASK=$(visudo -cf /etc/sudoers.d/${sdofile} 2>&1)
+        statreport
+
+
+        if [[ "${@: -1}" == "EXPIREACCOUNT" ]]
+        then
+            CTNAME="Set password to expire on first use"
+            CRNTASK=$(chage -d 0 ${ARRAYUSR[i]} 2>&1)
+            statreport
+        else
+            CTNAME="Did not set password to expire on first use"
+            statreport
+        fi
+        done
+    IFS=$OIFS
+else
+    if $(id ${1} >/dev/null 2>&1)
+    then
+        echo -e "${D_RD}[ FAIL ]${CLR} -- The user ${D_RD}${1}${CLR} already exists."
+        echo -e "No changes have been made. Here is their entry:"
+        echo
+        echo -e "==========="
+        echo -e "$(id ${1})"
+        echo -e "==========="
+        exit 1
+    else
+        :
+    fi
+    # sudoers.d won't accept '.' - changes it to _ if present
+    sdofile=${1}
+    if [[ "$sdofile" =~ "." ]]
+    then
+       sdofile=$(echo $sdofile | sed 's/\./_/g')
+    else
+      :
+    fi
+    if [[ -f /etc/sudoers.d/${sdofile} ]]
+    then
+        echo -e " ${D_RD}[ FAIL ]${CLR} ${D_RD}${sdofile}${CLR} is a pre-existing sudoers file. Please try again."
+        exit 1
+    else
+        :
+    fi
+    CTNAME="Create user ${S_BLUE}${1}${WHTE} and set password"
+    CRNTASK=$(useradd ${1} -p ${2//REPLACE-TAG/\$} 2>&1)
+    statreport
+
+    CTNAME="Grant user ${S_BLUE}${1}${WHTE} sudo permissions"
+    CRNTASK=$(echo "${1} ALL=(ALL) ${3}ALL" >> /etc/sudoers.d/${sdofile} 2>&1) &&
+    statreport
+
+    CTNAME="Set correct permissions for sudoers.d file"
+    CRNTASK=$(chmod 0440 /etc/sudoers.d/${sdofile} 2>&1)
+    statreport
+
+    CTNAME="Check for file errors for sudoers"
+    CRNTASK=$(visudo -cf /etc/sudoers.d/${sdofile} 2>&1)
+    statreport
+
+    if [[ "${@: -1}" == "EXPIREACCOUNT" ]]
+    then
+        CTNAME="Set password to expire on first use"
+        CRNTASK=$(chage -d 0 ${1} 2>&1)
+        statreport
+    else
+        CTNAME="Did not set password to expire on first use"
+        statreport
+    fi
+fi
+
+rm -f -- $0
+### END Create a user with Sudo Perms

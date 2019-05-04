@@ -1,0 +1,106 @@
+### START Change Users Password
+#! /bin/bash
+D_RD='\e[38;5;88m'
+L_GRN='\e[38;5;41m'
+S_BLUE='\e[38;5;45m'
+L_GRY='\e[38;5;244m'
+WHTE='\e[38;5;231m'
+CLR='\e[0m'
+
+trap cleanup SIGINT
+cleanup() {
+  echo "[ STOPPED ] -- Recieved SIGINT - Cleaned up."
+  rm -f -- $0
+}
+
+echo "--------------------------------------"
+echo -e "${L_GRN}{~} ${WHTE}Device: ${S_BLUE}$HOSTNAME${CLR}"
+echo "--------------------------------------"
+echo
+
+statreport(){
+if [[ $? -gt 0 ]]
+then
+    echo -e " ${D_RD}[ FAIL ]${CLR} -- ${CTNAME} did not complete succcesfully. Here is the error:"
+    echo
+    echo "==========="
+    echo ${CRNTASK}
+    echo "==========="
+    echo
+else
+echo -e " ${L_GRN}[ ${WHTE}OK ${L_GRN}]${CLR} -- ${WHTE}${CTNAME} ${CLR}"
+fi
+}
+
+if [[ "${1}" == "multiple-on" && "${#@}" -gt "2" ]]
+then
+    newarray=(${@//REPLACE-TAG/\$})
+    # remove the tags and place back in the $ symbols, but escaped
+
+    arrayargs=(${newarray[@]:1}) 
+    # rename array and remove the first item (multiple-on)
+
+    MIDDLE="(( ${#arrayargs[@]} / 2 ))"
+    # determine the middle of the array
+   
+    END="${#arrayargs[@]}"
+    # determine the end position
+   
+    NMUSR=${arrayargs[@]:0:${MIDDLE}} 
+    # select from start to middle (users)
+    
+    NMPASS=${arrayargs[@]:${MIDDLE}:${END}}
+    # select from middle to end (passwords)
+    
+    # We had a check earlier already to make sure en even number of pass & users were
+    # sent. As such, the last half should be the passwords, and the first half should 
+    # be the users then we set the tags for the next part of the script
+
+    MULTIU="yes"
+    MULTIP="yes"
+else
+    MULTIU="no"
+    MULTIP="no"
+fi
+
+if [[ "$MULTIU" =~ "yes" && "$MULTIP" =~ "yes" ]]
+then
+    OIFS=$IFS
+    IFS=" "
+    ARRAYUSR=($NMUSR)
+    ARRAYPASS=(${NMPASS})
+    echo
+    for k in ${ARRAYUSR[@]}
+    do 
+        if $(id ${k} >/dev/null 2>&1)
+        then
+            :
+        else
+            echo -e "${D_RD}[ FAIL ]${CLR} -- The user ${D_RD}${k}${CLR} doesn't exists. "
+            echo -e "            No changes have been made."
+            exit 1
+        fi
+    done
+    for ((i=0; i<${#ARRAYUSR[@]}; i++))
+    do
+        CTNAME="Change password for user ${S_BLUE}${ARRAYUSR[i]}"
+        CRNTASK=$(echo "${ARRAYUSR[i]}:${ARRAYPASS[i]}" | chpasswd -e)
+        statreport
+    done
+    IFS=$OIFS
+else
+    if $(id ${1} >/dev/null 2>&1)
+    then
+        :
+    else
+        echo -e "${D_RD}[ FAIL ]${CLR} -- The user ${D_RD}${1}${CLR} doesn't exist."
+        echo -e "            No changes have been made."
+        exit 1        
+    fi
+    CTNAME="Change password for user ${S_BLUE}${1}"
+    CRNTASK=$(echo "${1}:${2//REPLACE-TAG/\$}" | chpasswd -e)
+    statreport
+fi
+
+rm -f -- $0
+### END Change Users Password

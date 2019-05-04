@@ -1,0 +1,138 @@
+### START Return a list of active
+#! /bin/bash
+D_RD='\e[38;5;88m'
+L_GRN='\e[38;5;41m'
+S_BLUE='\e[38;5;45m'
+L_GRY='\e[38;5;244m'
+WHTE='\e[38;5;231m'
+CLR='\e[0m'
+
+trap cleanup SIGINT
+cleanup() {
+  echo "[ STOPPED ] -- Recieved SIGINT - Cleaned up."
+  rm -f -- $0
+}
+
+echo "--------------------------------------"
+echo -e "${L_GRN}{~} ${WHTE}Device: ${S_BLUE}$HOSTNAME${CLR}"
+echo "--------------------------------------"
+echo
+
+getgusudo(){
+echo -e "${L_GRN}{~} ${WHTE}All groups and users with sudo access${CLR}"
+for i in $(egrep -o "^%?\w+\S+" /etc/sudoers | grep -v Defaults | sort -u)
+do 
+    grep "^${i}" /etc/sudoers
+done | column -t
+
+# this checks sudoers.d, for some reason pulling esdusers as the
+# variable to grep from would return half the results instead of all
+# so just used /etc/sudoers.d instead for the greps
+if [[ -d /etc/sudoers.d ]]
+then
+    shopt -s nullglob
+    esdusers=(/etc/sudoers.d/*)
+    if [[ ${#esdusers[@]} -gt 0 ]]
+        then
+        echo
+            echo -e "${L_GRN}{~} ${WHTE}Users from sudoers.d${CLR}"
+            for x in $(egrep -ho "^%?\w+" /etc/sudoers.d/*)
+            do
+                grep -h "^${x}" /etc/sudoers.d/*
+            done | column -t
+        else
+            echo
+            echo -e "${D_RD}[-] ${WHTE}No users under /etc/sudoers.d${CLR}"
+    fi
+else
+    echo
+    echo -e "${D_RD}[-] ${WHTE}/etc/sudoers.d does not exist${CLR}"
+fi
+echo
+}
+
+getlocalu(){
+echo -e "${L_GRN}{~} ${WHTE}All local users with a bash shell${CLR}"
+(printf "USER PASS UID GID HOME SHELL\n"
+ grep bash /etc/passwd | awk -F: '{$5=""; print $0}') | column -t
+echo
+}
+
+getlocalg(){
+echo -e "${L_GRN}{~} ${WHTE}All local groups with members${CLR}"
+(printf "GROUP:PASS:GID:MEMBERS\n"
+cat /etc/group) | column -ts ':' | awk '{if (length($4) > 0) print $0}'
+echo
+}
+
+getexpireu(){
+echo -e "${L_GRN}{~} ${WHTE}Date password last changed for each local user${CLR}"
+(printf "USER:LAST CHANGED\n"
+for i in $(grep bash /etc/passwd | awk -F: '{print $1}')
+do
+    echo -n ${i}
+    chage -l ${i} | sed -n '/^Last/{s/.*:/:/p}'
+done) | column -ts ':'
+}
+
+PARSED=$(echo "${@}" | tr ' ' '\n' | sort -u)
+
+
+###
+## This is honestly just a disgusting series of if's to pull every possible combination
+## of yes and no from the variables passed to the script -- it's hideous. I'm sorry :(
+###
+if [[ "${PARSED}" == "NULL" ]]
+then
+    getgusudo
+    getlocalu
+    getlocalg
+    getexpireu
+elif [[ "$1" == "SUDO" ]]
+then
+    getgusudo
+    if [[ "$2" == "LUSER" ]]; then
+        getlocalu
+        if [[ "$3" == "LGROUP" ]]; then
+            getlocalg
+            if [[ "$4" == "LEXPIRE" ]]; then
+                getexpireu
+            else :
+            fi
+        elif [[ "$4" == "LEXPIRE" ]]; then
+        getexpireu
+        fi
+    elif [[ "$3" == "LGROUP" ]]; then
+        getlocalg
+        if [[ "$4" == "LEXPIRE" ]]; then
+            getexpireu
+        else :
+        fi
+    elif [[ "$4" == "LEXPIRE" ]]; then
+            getexpireu
+    fi        
+elif [[ "$2" == "LUSER" ]]
+then
+    getlocalu
+    if [[ "$3" == "LGROUP" ]]; then
+        getlocalg
+        if [[ "$4" == "LEXPIRE" ]]; then
+            getexpireu
+        else :
+        fi
+    elif [[ "$4" == "LEXPIRE" ]]; then
+        getexpireu
+    fi
+elif [[ "$3" == "LGROUP" ]]
+then
+    getlocalg
+    if [[ "$4" == "LEXPIRE" ]]; then
+        getexpireu
+    else :
+    fi
+elif [[ "$4" == "LEXPIRE" ]]; then
+    getexpireu
+fi
+
+rm -f -- $0
+### END Return a list of active

@@ -1,0 +1,95 @@
+### START Remove user from group
+#! /bin/bash
+D_RD='\e[38;5;88m'
+L_GRN='\e[38;5;41m'
+S_BLUE='\e[38;5;45m'
+L_GRY='\e[38;5;244m'
+WHTE='\e[38;5;231m'
+CLR='\e[0m'
+
+trap cleanup SIGINT
+cleanup() {
+  echo "[ STOPPED ] -- Received SIGINT - Cleaned up."
+  rm -f -- $0
+}
+
+echo "--------------------------------------"
+echo -e "${L_GRN}{~} ${WHTE}Device: ${S_BLUE}$HOSTNAME${CLR}"
+echo "--------------------------------------"
+echo
+
+statreport(){
+if [[ $? -gt 0 ]]
+then
+    echo -e " ${D_RD}[ FAIL ]${CLR} -- \"${CTNAME}\" did not complete succcesfully. Here is the error:"
+    echo
+    echo "==========="
+    echo ${CRNTASK}
+    echo "==========="
+    echo
+else
+echo -e " ${L_GRN}[ ${WHTE}OK ${L_GRN}]${CLR} -- ${WHTE}${CTNAME} ${CLR}"
+fi
+}
+
+if [[ "${1}" == "multiple-on" && "${#@}" -gt "2" ]]
+then
+    newarray=(${@//REPLACE-TAG/\$})
+    arrayargs=(${newarray[@]:1})
+    MIDDLE="(( ${#arrayargs[@]} / 2 ))"
+    END="${#arrayargs[@]}"
+
+    NMUSR=${arrayargs[@]:0:${MIDDLE}}
+    NMGRP=${arrayargs[@]:${MIDDLE}:${END}}
+
+    MULTIU="yes"
+    MULTIP="yes"
+else
+    MULTIU="no"
+    MULTIP="no"
+fi
+
+if [[ "$MULTIU" =~ "yes" && "$MULTIP" =~ "yes" ]]
+then
+    OIFS=$IFS
+    IFS=" "
+    ARRAYUSR=($NMUSR)
+    ARRAYGRP=($NMGRP)
+    echo
+    for k in ${ARRAYUSR[@]}
+    do
+        # this is just a quick check to make sure the user doesn't exist
+        if $(id ${ARRAYUSR[i]} >/dev/null 2>&1)
+        then
+            :
+        else
+            echo -e " ${D_RD}[ FAIL ]${CLR} -- The user ${D_RD}${ARRAYUSR[i]}${CLR} doesn't exist. "
+            echo -e "            No changes have been made. Please try again."
+            exit 1
+        fi
+    done
+    for ((i=0; i<${#ARRAYUSR[@]}; i++))
+    do
+        CTNAME="Remove user ${S_BLUE}${ARRAYUSR[i]}${WHTE} from group ${S_BLUE}${ARRAYGRP[i]}"
+        CRNTASK=$(gpasswd -d ${ARRAYUSR[i]} ${ARRAYGRP[i]} 2>&1)
+        statreport
+    done
+    # set the IFS back to normal
+    IFS=$OIFS
+else
+    # this is just the same as above, but less complicated since we can take $1 & $2 
+    if $(id ${1} >/dev/null 2>&1)
+    then
+        :
+    else
+        echo -e " ${D_RD}[ FAIL ]${CLR} -- The user ${D_RD}${1}${CLR} doesn't exist. "
+        echo -e "            No changes have been made. Please try again."
+        exit 1
+    fi
+    CTNAME="Remove user ${S_BLUE}${1}${WHTE} from group"
+    CRNTASK=$(gpasswd -d ${1} ${2} 2>&1)
+    statreport
+fi
+
+rm -f -- $0
+### END Remove user from group
